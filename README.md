@@ -1,79 +1,76 @@
-DIY HOME SERVER - PROXMOX - UPS
+## DIY HOME SERVER - PROXMOX - UPS
+
 When building a home lab server, you’re mostly going to use some kind of Uninterruptible Power Supply (UPS).
 
-It’s important for your home servers to always know the status of the UPS providing the power. This makes it possible to gracefully shutdown all systems before the UPS batterries get drained.
+It’s important for your home servers to always know the status of the UPS providing the power. This makes it possible to gracefully shutdown all systems before the UPS batteries get drained.
 
-Cyberpower CP1500 AVR UPS
+**Cyberpower CP1500 AVR UPS**
 
-In most cases, home users are running one or multiple Proxmox bare metal servers, each running several VMs and containers. Each virtualisation host can shutdown all of its own clients during a normal shutdown sequence.  But therefore each host has to be aware of the UPS status.
+In most cases, home users are running one or multiple Proxmox bare metal servers, each running several VMs and containers. Each virtualization host can shutdown all of its own clients during a normal shutdown sequence.  But therefore each host has to be aware of the UPS status.
 
 Most UPS have one port to connect them to computers or servers for management purposes. On the budget friendly devices, you’ll find a USB or serial connector. The more expensive devices often have an ethernet port.
 
 My Cyberpower CP1500 AVR UPS is just a cheap and simple 650 Watt/1.4 kVA device. The UPS has one USB port to communicate with connected devices.
 
-Tip :
+> Tip :
 Before buying a certain UPS, always first check replacement batteries prices and availability!
-I especially chose this UPS because replacement batteries are widely available, afordable and don’t have any exotic dimensions.
+I especially chose this UPS because replacement batteries are widely available, affordable and don’t have any exotic dimensions.
+> 
 
-DIY HOME SERVER - PROXMOX - NUT
+## DIY HOME SERVER - PROXMOX - NUT
+
 We’ll use the Open Source Network UPS Tools (NUT) to communicate with the UPS.
 
 Because there’s only one (USB) port, this means that only one computer or server can communicate with the UPS directly. This brings us to the following topologies :
 
-
-“Simple” configuration :
+### “Simple” configuration :
 
 One UPS, one computer or server. This is also known as a “Standalone” configuration.
 
 This is the configuration that most users will use. You need at least a driver, upsd, and upsmon running.
 
-
-“Advanced” configuration :
+### “Advanced” configuration :
 
 One UPS, multiple computers or servers. Only one of them can actually talk to the UPS directly. That’s where the network comes in. The Master system runs the driver, upsd, and upsmon in master mode. The Slave systems only run upsmon in slave mode.
 
-This is useful when you have a very large UPS that’s capable of running multiple systems simultaneously. There is no longer the need to buy a bunch of individual UPSes or “sharing” hardware, since this software will handle the sharing for you.
+This is useful when you have a very large UPS that’s capable of running multiple systems simultaneously. There is no longer the need to buy a bunch of individual UPS or “sharing” hardware, since this software will handle the sharing for you.
 
+In our example, we’ll setup a “simple” configuration. The UPS USB port is connected directly to an USB port on the Proxmox server.
 
-In our example, we’ll setup a “simple” configugartion. The UPS USB port is connected directly to an USB port on the Proxmox server.
+**Shutdown timeline (simple configuration) :**
 
-Shutdown timeline (simple configuration) :
+- Main power failure occurs :
+    - UPS device switches power to battery
+    - UPS device notifies server with a “On battery” event message
+    - UPS battery is getting close to depletion :
+        - UPS device notifies server with a “Battery low” event message
+        - Server waits the set “Final delay” time
+        - Server starts his shutdown procedure :
+            - Sets the “Kill power” flag
+            - Ends all running processes
+            - Unmounts all file systems
+            - Remounts file systems as read-only
+            - Looks for the “Kill power” flag
+            - Issues the “Kill power” command to the UPS device
+            - Halts the system, but doesn’t power off
+            - UPS device receives the “Kill power” command from the server :
+                - UPS waits for the “Shutdown delay” time to pass
+                - This is to give all systems enough time to properly shut down
+                - UPS device cuts power on all outlets
+                - All connected systems lose power
+- Main power supply has been restored :
+    - UPS device starts to reload its battery
+    - UPS device waits for the “Startup delay” time to pass | This is to reload the battery to a safe minimum level
+    - UPS device restores power on all outlets
+    - All connected systems start up again
 
-Main power failure occurs :
-UPS device switches power to battery
-UPS device notifies server with a “On battery” event message
-UPS battery is getting close to depletion :
-UPS device notifies server with a “Battery low” event message
-Server waits the set “Final delay” time
-Server starts his shutdown procedure :
-Sets the “Kill power” flag
-Ends all running processes
-Unmounts all file systems
-Remounts file systems as read-only
-Looks for the “Kill power” flag
-Issues the “Kill power” command to the UPS device
-Halts the system, but doesn’t power off
-UPS device receives the “Kill power” command from the server :
-UPS waits for the “Shutdown delay” time to pass
-This is to give all systems enough time to properly shut down
-UPS device cuts power on all outlets
-All connected systems lose power
-
-Main power supply has been restored :
-UPS device starts to reload its battery
-UPS device waits for the “Startup delay” time to pass
-This is to reload the battery to a safe minimum level
-UPS device restores power on all outlets
-All connected systems start up again
 If you want to set up an advanced configuration, please consult [this excellent post](https://roll.urown.net/server/server-ups.html).
-
-We’ll install :
 
 NUT server and NUT client directly on to our Proxmox PVE.
 The server will communicate with the UPS over the USB connection and serve the data to all listening clients.
 The client will listen to the server and take appropriate actions depending on the UPS status.
 NUT client and an Apache webserver on a dedicated LXC container. This client will also listen to the server and present the UPS statistics in a graphical user interface.
-We use a seperate LXC container because, for security reasons, we don NOT want to install a webserver directly onto our Proxmox PVE.
+We use a separate LXC container because, for security reasons, we don NOT want to install a webserver directly onto our Proxmox PVE.
 NUT is a pain to configure. But it’s well documented and worth the pain.
 
 DIY HOME SERVER - PROXMOX - NUT Installation
@@ -98,7 +95,6 @@ Probe the NUT devices :
 
 nut-scanner -U
 Take note of these values.
-
 
 a. /etc/nut/nut.conf
 Backup /etc/nut/nut.conf :
@@ -154,7 +150,7 @@ Communications with UPS apc@localhost established
 Please check the Network UPS Tools – Hardware Compatibility List to identify the correct driver suited for your UPS.
 
 c. /etc/nut/upsd.conf
-Backup /etc/nut/upsd.conf : 
+Backup /etc/nut/upsd.conf :
 cp /etc/nut/upsd.conf /etc/nut/upsd.example.conf
 
 Remove /etc/nut/upsd.conf :
@@ -170,7 +166,7 @@ LISTEN :: 3493
 By using 0.0.0.0 instead of 127.0.0.1 we instruct the server to respond to requests from all networks.
 
 d. /etc/nut/upsd.users
-Backup /etc/nut/upsd.users : 
+Backup /etc/nut/upsd.users :
 cp /etc/nut/upsd.users /etc/nut/upsd.example.users
 
 Remove /etc/nut/upsd.users :
@@ -182,18 +178,28 @@ nano /etc/nut/upsd.users
 Add :
 
 [upsadmin]
+
 # Administrative user
+
 password = ********
+
 # Allow changing values of certain variables in the UPS.
+
 actions = SET
+
 # Allow setting the "Forced Shutdown" flag in the UPS.
+
 actions = FSD
+
 # Allow all instant commands
+
 instcmds = ALL
 upsmon master
 
 [upsuser]
+
 # Normal user
+
 password = ********
 upsmon slave
 Replace ******** with your own password(s).
@@ -208,7 +214,7 @@ rm /etc/nut/upsmon.conf
 Edit /etc/nut/upsmon.conf :
 nano /etc/nut/upsmon.conf
 
-Add : 
+Add :
 
 RUN_AS_USER root
 MONITOR apc@localhost 1 upsadmin ******* master
@@ -260,7 +266,7 @@ DEADTIME (= POLLFREQ * 6)
 MAXAGE (= POLLFREQ * 6)
 
 f. /etc/nut/upssched.conf
-Backup /etc/nut/upssched.conf : 
+Backup /etc/nut/upssched.conf :
 cp /etc/nut/upssched.conf /etc/nut/upssched.example.conf
 
 Remove /etc/nut/upssched.conf
@@ -277,7 +283,9 @@ LOCKFN /etc/nut/upssched.lock
 
 AT ONBATT * START-TIMER onbatt 30
 AT ONLINE * CANCEL-TIMER onbatt online
+
 # AT ONBATT * START-TIMER earlyshutdown 30
+
 AT LOWBATT * EXECUTE onbatt
 AT COMMBAD * START-TIMER commbad 30
 AT COMMOK * CANCEL-TIMER commbad commok
@@ -285,7 +293,7 @@ AT NOCOMM * EXECUTE commbad
 AT SHUTDOWN * EXECUTE powerdown
 AT SHUTDOWN * EXECUTE powerdown
 
-A tip from TechnoTim : 
+A tip from TechnoTim :
 Be sure PIPEFN and LOCKFN point to a folder that esists, I’ve seen it point to /etc/nut/upssched/ instead of /etc/nut/.
 If it does, create the folder or update these variables. mkdir /etc/nut/upssched/
 
@@ -303,30 +311,30 @@ nano /etc/nut/upssched-cmd
 Add :
 
 #!/bin/sh
- case $1 in
-       onbatt)
-          logger -t upssched-cmd "UPS running on battery"
-          ;;
-     #  earlyshutdown)
-     #     logger -t upssched-cmd "UPS on battery too long, early shutdown"
-     #     /usr/sbin/upsmon -c fsd
-     #     ;;
-       shutdowncritical)
-          logger -t upssched-cmd "UPS on battery critical, forced shutdown"
-          /usr/sbin/upsmon -c fsd
-          ;;
-       upsgone)
-          logger -t upssched-cmd "UPS has been gone too long, can't reach"
-          ;;
-       *)
-          logger -t upssched-cmd "Unrecognized command: $1"
-          ;;
- esac
+case $1 in
+onbatt)
+logger -t upssched-cmd "UPS running on battery"
+;;
+#  earlyshutdown)
+#     logger -t upssched-cmd "UPS on battery too long, early shutdown"
+#     /usr/sbin/upsmon -c fsd
+#     ;;
+shutdowncritical)
+logger -t upssched-cmd "UPS on battery critical, forced shutdown"
+/usr/sbin/upsmon -c fsd
+;;
+upsgone)
+logger -t upssched-cmd "UPS has been gone too long, can't reach"
+;;
+*)
+logger -t upssched-cmd "Unrecognized command: $1"
+;;
+esac
 Then :
 
 chmod +x /etc/nut/upssched-cmd
 
-Now reboot your Proxmox server. Or enter the following command sequence to restart the services : 
+Now reboot your Proxmox server. Or enter the following command sequence to restart the services :
 
 service nut-server restart
 service nut-client restart
@@ -345,7 +353,7 @@ At the moment, the system is configured to shut down when the UPS runtime or bat
 upsrw apc@localhost
 
 We will set the parameter for minimum runtime to 10 minutes and the minimum charge to 50% :
-upsrw -s battery.runtime.low=600 apc@localhost 
+upsrw -s battery.runtime.low=600 apc@localhost
 upsrw -s battery.charge.low=50 apc@localhost
 These commands will ask for a username and password. Be sure to use the upsadmin account and password specified in /etc/nut/upsmon.conf and /etc/nut/upsd.users. New values will be visible after restart.
 
@@ -386,7 +394,7 @@ On the DNS tab, there’s nothing to change.
 
 Click Next.
 
-On the Confirm tab, check the Start after created option. 
+On the Confirm tab, check the Start after created option.
 
 Click Finish.
 
@@ -396,7 +404,7 @@ Select the container and click Options → Start at boot → Edit.
 
 Set the Start at boot option and click OK.
 
-In Proxmox, select the newly created LXC container and open the Console. 
+In Proxmox, select the newly created LXC container and open the Console.
 
 Update and upgrade the system :
 apt update && apt upgrade -y
@@ -449,8 +457,8 @@ nano /etc/nut/hosts.conf
 
 Add :
 
-MONITOR apc@xxx.xxx.xxx.xxx "UPS Name"
-Replace xxx.xxx.xxx.xxx with the IP address of your Proxmox (NUT) server.
+MONITOR [apc@xxx.xxx.xxx.xxx](mailto:apc@xxx.xxx.xxx.xxx) "UPS Name"
+Replace [xxx.xxx.xxx.xxx](http://xxx.xxx.xxx.xxx/) with the IP address of your Proxmox (NUT) server.
 
 d. /etc/nut/upsset.conf
 Backup /etc/nut/upsset.conf :
@@ -466,7 +474,7 @@ Add :
 I_HAVE_SECURED_MY_CGI_DIRECTORY
 
 e. /etc/nut/upsmon.conf
-Backup /etc/nut/upsmon.conf : 
+Backup /etc/nut/upsmon.conf :
 cp /etc/nut/upsmon.conf /etc/nut/upsmon.example.conf
 
 Remove /etc/nut/upsmon.conf :
@@ -478,10 +486,9 @@ nano /etc/nut/upsmon.conf
 Add :
 
 RUN_AS_USER root
-MONITOR apc@xxx.xxx.xxx.xxx 1 upsuser ******* slave
-Replace xxx.xxx.xxx.xxx with the IP address of your Proxmox (NUT) server.
+MONITOR [apc@xxx.xxx.xxx.xxx](mailto:apc@xxx.xxx.xxx.xxx) 1 upsuser ******* slave
+Replace [xxx.xxx.xxx.xxx](http://xxx.xxx.xxx.xxx/) with the IP address of your Proxmox (NUT) server.
 Replace ******** with your own password(s).
-
 
 Enter the command :
 sudo a2enmod cgi
@@ -491,11 +498,11 @@ sudo systemctl restart apache2
 
 Now test the monitoring. Open a new browser tab and go to the UPS status page :
 http://xxx.xxx.xxx.xxx/cgi-bin/nut/upsstats.cgi
-Replace xxx.xxx.xxx.xxx with the IP address of your LXC container.
+Replace [xxx.xxx.xxx.xxx](http://xxx.xxx.xxx.xxx/) with the IP address of your LXC container.
 
 Ref : https://youtu.be/vyBP7wpN72c
 
-5. Testing
+1. Testing
 a. System shutdown
 Now you can test if your system shuts down gracefully.
 In Proxmox, select your PVE node → Shell.
